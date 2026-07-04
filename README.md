@@ -76,6 +76,6 @@ missing backend and shows the labeled simulation. `vercel.json` is included.
 
 ## License & author
 
-MIT. Written by [Ryan Cox](https://coxcontent.com) as the reference implementation for
-the Two-Lane Rule (white paper on the site). The models in this README will be out of
-date within a year; the rule will not.
+MIT. Built by [Ryan Cox](https://coxcontent.com), who runs this exact stack daily in a
+behavioral health consulting practice. The white paper behind it is on the site. Issues
+and PRs welcome, especially detector patterns from other regulated domains.
