@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lane Router — The Two-Lane Rule</title>
+<style>
+  :root { --teal:#2D5A6A; --sage:#4A7565; --cream:#FAF6F0; --slate:#2A3340; --off:#F2EDE6;
+          --border:#E8E2D8; --mid:#9A9488; --terra:#B56040; --moss:#7A9A80; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--cream); color:var(--slate);
+         font:16px/1.5 -apple-system, "Segoe UI", Helvetica, sans-serif; }
+  .wrap { max-width:980px; margin:0 auto; padding:28px 20px 60px; }
+  header h1 { margin:0; font-size:30px; color:var(--teal); }
+  header h1 span { color:var(--sage); }
+  header p { margin:6px 0 0; color:var(--mid); max-width:640px; }
+  #demoBanner { display:none; background:var(--terra); color:#fff; border-radius:10px;
+    padding:10px 16px; margin:18px 0 0; font-size:14px; }
+  .rule { background:var(--slate); color:var(--off); border-radius:12px; padding:14px 18px;
+    margin:20px 0; font-size:15px; }
+  .rule b { color:#9DBFA6; }
+  textarea { width:100%; min-height:110px; padding:14px; font:15px ui-monospace, Menlo, monospace;
+    border:1px solid var(--border); border-radius:12px; background:#fff; color:var(--slate); resize:vertical; }
+  .row { display:flex; gap:10px; margin-top:10px; flex-wrap:wrap; align-items:center; }
+  button { background:var(--teal); color:#fff; border:none; border-radius:10px;
+    padding:12px 22px; font-size:15px; font-weight:600; cursor:pointer; }
+  button.ghost { background:var(--off); color:var(--teal); border:1px solid var(--border); }
+  button:disabled { opacity:.5; }
+  .samples { font-size:13px; color:var(--mid); }
+  .samples a { color:var(--sage); cursor:pointer; text-decoration:underline; }
+  #decision { display:none; margin-top:22px; border:1px solid var(--border);
+    border-radius:14px; background:#fff; overflow:hidden; }
+  #laneBadge { padding:16px 20px; font-size:20px; font-weight:800; color:#fff; }
+  .lane-local { background:var(--sage); } .lane-cloud { background:#5A7A8E; }
+  #decision .body { padding:16px 20px; }
+  .chips { margin:8px 0; } .chip { display:inline-block; background:var(--off);
+    border:1px solid var(--border); color:var(--terra); border-radius:20px;
+    padding:3px 12px; font-size:12.5px; font-weight:600; margin:2px 4px 2px 0; }
+  .chip.ok { color:var(--sage); }
+  .label { font-size:11px; letter-spacing:2px; color:var(--mid); text-transform:uppercase; margin-top:14px; }
+  pre { background:var(--slate); color:var(--off); border-radius:10px; padding:12px 14px;
+    white-space:pre-wrap; font:13px ui-monospace, Menlo, monospace; max-height:300px; overflow:auto; }
+  h2 { color:var(--teal); font-size:20px; margin:34px 0 6px; }
+  .sub { color:var(--mid); font-size:13.5px; margin:0 0 12px; }
+  table { width:100%; border-collapse:collapse; background:#fff; border:1px solid var(--border);
+    border-radius:12px; overflow:hidden; font-size:13.5px; }
+  th { background:var(--off); color:var(--teal); text-align:left; padding:9px 12px; }
+  td { padding:8px 12px; border-top:1px solid var(--border); }
+  .tag { font-weight:700; } .tag.local { color:var(--sage); } .tag.cloud { color:#5A7A8E; }
+  #stats { display:flex; gap:14px; margin:14px 0; flex-wrap:wrap; }
+  .stat { background:#fff; border:1px solid var(--border); border-radius:12px;
+    padding:12px 20px; text-align:center; min-width:120px; }
+  .stat b { display:block; font-size:26px; color:var(--teal); }
+  .stat span { font-size:12px; color:var(--mid); }
+  footer { margin-top:44px; color:var(--mid); font-size:13px; border-top:1px solid var(--border); padding-top:16px; }
+  footer a { color:var(--sage); }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>Lane<span>Router</span></h1>
+  <p>A reference implementation of the Two-Lane Rule: sensitive data takes the local lane, always.
+     Every request is classified, routed, and audit-logged. The log stores metadata only — never the text.</p>
+</header>
+
+<div id="demoBanner">Demo simulation — no live backend on this page. Clone the repo and run
+<code>python3 server.py</code> for the real router with your own local models. Sample data below is synthetic.</div>
+
+<div class="rule">The test: <b>would this data need a BAA?</b> Then it never leaves hardware you control.
+Detectors are conservative on purpose: suspicion routes local.</div>
+
+<textarea id="input" placeholder="Paste any text. Try a fake referral with a name and DOB, then the same text de-identified."></textarea>
+<div class="row">
+  <button id="go" onclick="go()">Route it</button>
+  <button class="ghost" onclick="loadSample(0)">Sample: raw referral</button>
+  <button class="ghost" onclick="loadSample(1)">Same, de-identified</button>
+  <button class="ghost" onclick="loadSample(2)">Payer policy question</button>
+</div>
+
+<div id="decision">
+  <div id="laneBadge"></div>
+  <div class="body">
+    <div class="label">Why</div><div class="chips" id="chips"></div>
+    <div class="label">Redacted preview (what a log viewer could safely see)</div>
+    <pre id="preview"></pre>
+    <div class="label">Response (<span id="modelName"></span>)</div>
+    <pre id="output"></pre>
+  </div>
+</div>
+
+<h2>Audit trail</h2>
+<p class="sub">Metadata only: timestamp, content hash, lane, reasons, model, latency. This is the artifact
+a compliance reviewer reads.</p>
+<div id="stats"></div>
+<table><thead><tr><th>Time</th><th>Hash</th><th>Lane</th><th>Reasons</th><th>Model</th><th>ms</th></tr></thead>
+<tbody id="logBody"></tbody></table>
+
+<footer>The Two-Lane Rule · reference implementation · MIT license ·
+<a href="https://github.com/ryancox/lane-router">source</a> · Ryan Cox, 2026 ·
+Not a compliance product; compliance is a program, this is a rule your program can audit.</footer>
+</div>
+
+<script>
+const SAMPLES = [
+`Patient: Noah Kim  DOB: 03/14/2021
+Insurance: Meridian ID: MER-88214-K
+Referred for comprehensive ABA evaluation. Parent reports elopement and limited functional communication. Draft an intake summary.`,
+`A 5-year-old was referred for comprehensive ABA evaluation. Parent reports elopement and limited functional communication. Draft an intake summary template.`,
+`What does Meridian's published medical-necessity policy require for continued ABA authorization? Summarize the criteria.`];
+
+let DEMO = false, demoLog = [];
+
+function loadSample(i){ document.getElementById("input").value = SAMPLES[i]; }
+
+async function go(){
+  const text = document.getElementById("input").value.trim();
+  if(!text) return;
+  const btn = document.getElementById("go");
+  btn.disabled = true; btn.textContent = "Routing…";
+  let r;
+  if(DEMO){ r = demoRoute(text); await new Promise(s=>setTimeout(s,700)); }
+  else {
+    try { r = await fetch("/api/route",{method:"POST",headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({text})}).then(x=>x.json()); }
+    catch(e){ enterDemo(); r = demoRoute(text); }
+  }
+  btn.disabled = false; btn.textContent = "Route it";
+  render(r); refreshLog();
+}
+
+function render(r){
+  const d = r.decision;
+  const el = document.getElementById("decision"); el.style.display = "block";
+  const badge = document.getElementById("laneBadge");
+  badge.className = d.lane === "local" ? "lane-local" : "lane-cloud";
+  badge.textContent = d.lane === "local"
+    ? "LOCAL LANE — runs on this machine, nothing transmitted"
+    : "CLOUD LANE — no sensitivity detected, frontier model allowed";
+  document.getElementById("chips").innerHTML = d.reasons.map(x =>
+    `<span class="chip${d.lane==='cloud'?' ok':''}">${x}</span>`).join("");
+  document.getElementById("preview").textContent = r.redacted_preview;
+  document.getElementById("modelName").textContent = d.model;
+  document.getElementById("output").textContent = r.output;
+}
+
+async function refreshLog(){
+  let entries;
+  if(DEMO){ entries = demoLog; }
+  else {
+    try { entries = (await fetch("/api/log").then(x=>x.json())).entries; }
+    catch(e){ enterDemo(); entries = demoLog; }
+  }
+  entries = entries.slice().reverse();
+  document.getElementById("logBody").innerHTML = entries.map(e =>
+    `<tr><td>${e.ts.replace("T"," ")}</td><td><code>${e.id}</code></td>
+     <td class="tag ${e.lane}">${e.lane.toUpperCase()}</td>
+     <td>${e.reasons.join(", ")}</td><td>${e.model}</td><td>${e.latency_ms}</td></tr>`).join("");
+  const n = entries.length, loc = entries.filter(e=>e.lane==="local").length;
+  document.getElementById("stats").innerHTML =
+    `<div class="stat"><b>${n}</b><span>requests</span></div>
+     <div class="stat"><b>${loc}</b><span>routed local</span></div>
+     <div class="stat"><b>${n-loc}</b><span>routed cloud</span></div>
+     <div class="stat"><b>0</b><span>sensitive bytes transmitted</span></div>`;
+}
+
+// ---------- demo mode (static hosting: same detectors, simulated execution) ----------
+const RX = [["ssn",/\b\d{3}-\d{2}-\d{4}\b/],["phone",/\b(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4}\b/],
+["email",/\b[\w.+-]+@[\w-]+\.[a-z]{2,}\b/i],["dob",/\b(dob|date of birth|born)\b[^\n]{0,20}\d{1,4}[\/-]\d{1,2}[\/-]\d{1,4}/i],
+["mrn_or_id",/\b(mrn|member\s*id|patient\s*id|chart\s*#?|auth(orization)?\s*#?)\s*[:#]?\s*[A-Z0-9-]{4,}/i],
+["name_label",/\b(patient|client|member|guardian|parent)\s*(name)?\s*[:=]\s*[A-Z][a-z]+(\s+[A-Z][a-z]+)?/i],
+["sensitive_keyword",/\b(diagnos\w+|insurance\s*id|session note|treatment plan|incident report)\b/i]];
+
+function enterDemo(){ if(!DEMO){ DEMO = true; document.getElementById("demoBanner").style.display = "block"; } }
+
+function demoRoute(text){
+  const hits = RX.filter(([l,r])=>r.test(text)).map(([l])=>l);
+  const lane = hits.length ? "local" : "cloud";
+  let red = text; RX.forEach(([l,r])=>{ red = red.replace(new RegExp(r.source, (r.flags||"")+"g"), "[REDACTED]"); });
+  const d = { ts:new Date().toISOString().slice(0,19), id:Math.random().toString(16).slice(2,14),
+    chars:text.length, lane, reasons: hits.length?hits:["no sensitivity detectors fired"],
+    model: lane==="local"?"qwen2.5:14b (simulated)":"frontier model (simulated)",
+    latency_ms: 400+Math.floor(Math.random()*900) };
+  demoLog.push(d);
+  const output = lane==="local"
+    ? "[simulated local response] Intake summary drafted on-device. In the real router this runs on your own Ollama model; the text never leaves the machine."
+    : "[simulated cloud response] No identifiers detected, so this request may use the best available frontier model. In the real router, set CLOUD_CMD to enable.";
+  return { decision:d, redacted_preview: red.slice(0,220), output };
+}
+
+refreshLog();
+</script>
+</body>
+</html>
