@@ -19,7 +19,7 @@ Requires Python 3 and [Ollama](https://ollama.com) with at least one model pulle
 
 ```
 ollama pull qwen2.5:14b
-git clone https://github.com/YOURUSER/lane-router && cd lane-router
+git clone https://github.com/rcoxjrd/lane-router && cd lane-router
 python3 server.py
 ```
 
